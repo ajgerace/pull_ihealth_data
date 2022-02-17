@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 # pull_ihealth_data.py       
-# version: 1.0
+# version: 1.1
 
 from datetime import datetime
 import requests, sys, os, getpass
