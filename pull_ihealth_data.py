@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 # pull_ihealth_data.py       
-# version: 1.1
+# version: 1.2
 
 from datetime import datetime
 import requests, sys, os, getpass
@@ -86,6 +86,10 @@ for qkviewNum in qkviewList:
   # retrieve hostname and chassis serial number
   url = "https://ihealth-api.f5.com/qkview-analyzer/api/qkviews/" + str(qkviewNum)
   response = requests.request("GET", url, cookies=cookies, headers=headers)
+  if response.status_code != 200:
+    print('Qkview ' + qkviewNum + ' is unavailable, please login to iHealth to verify status of qkview.  Exiting ...' )
+    sys.exit()
+
   dictOut = xmltodict.parse(response.text)
   chassis_serial = dictOut['qkview']['chassis_serial']
   hostName = dictOut['qkview']['hostname']
