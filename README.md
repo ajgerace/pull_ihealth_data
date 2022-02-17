@@ -18,12 +18,13 @@ It will create subfolder for qkview_output and a subfolder for the provided cust
 
 
 Sample run:
-```$ python3 pull_ihealth_data.py
+```
+$ python3 pull_ihealth_data.py
 Enter your iHealth User ID: a.user@example.com
 Enter your iHealth password: 
 Enter qkview id: 12345678
 Enter customer name: internal
 
-Gatherig command output for bigip.example.com qkview number 12345678
+Gathering command output for bigip.example.com qkview number 12345678
 ```
 
