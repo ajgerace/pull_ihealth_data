@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 # pull_ihealth_data.py       
-# version: 1.2
+# version: 1.4
 
 from datetime import datetime
 import requests, sys, os, getpass
@@ -29,7 +29,7 @@ headers = {
   'Content-Type': 'application/json',
 }
 # dictionary of tmsh commands to retrieve from the qkview
-dictCommands = {
+dictDetailedCommands = {
   'show /sys hardware': "2072d0f40823cb2c812917008231014eb4afd456", 
   'show /sys host-info global': "27b3a0fad26441d792a9d8b041de2a7e44caccef",
   'show /cm failover-status': "e161b8be18af33223a4f3b345aa6d6ca9645dcdf",
@@ -40,10 +40,17 @@ dictCommands = {
   'list /net tunnels all-properties': "4e044fe405f1a6b1527c2975d82db522c6140603",
   'show /net vlan all-properties': "6ee0d0c49b00a0fac1b798743fe8a0d1090b0782",  
   'list /sys provision all-properties': "c12723edf7dedb01e5430fe6077a12ec07ef4e14",
-  'show /sys cluster all-properties': "72baf3c23dc373651b173bb4799ad53a3936199d",
   'show /sys cluster memory': "431a98c34bcac36b23c2c1003d3854834521dfe9",
   'show /sys cpu': "81aab6fd832ed03b46618cc17c5ec6606eda26b5",
-  'list /vcmp guest all-properties': 'a1db1d50065f454fb1dcea7b90ce9e5c4f73383d'
+  'list /vcmp guest all-properties': 'a1db1d50065f454fb1dcea7b90ce9e5c4f73383d',
+  'top -cb ': '28a4525e28cabf3337b72d8a6b7f2274a9718a1b'
+}
+dictSummaryCommands = {
+  'list /cm device': "09ef67537550e91959edc4b874bbe4d1b65407c2",
+  'list /net interface all-properties': "8e1bb3c0774816abd83a5253501fcb075d2ef397",
+  'show /sys cluster all-properties': "72baf3c23dc373651b173bb4799ad53a3936199d",
+  'show /sys cpu': "81aab6fd832ed03b46618cc17c5ec6606eda26b5",  
+  'list /sys provision all-properties': "c12723edf7dedb01e5430fe6077a12ec07ef4e14"
 }
 # dictionary of performance graphs
 dictGraphs = {
@@ -75,7 +82,16 @@ else:
   path = 'qkview_output/' + custName 
 if not os.path.exists(path):
   os.makedirs(path)
-
+print('Output levels: Summary/Detailed \n')
+print(' Summary includes Configuration totals and 30 day graphs\n (CPU, Memory, Throughput and Connections)\n')
+print(' Detailed includes Summary and Command output interfaces, vlans, trunks, failover \n')
+out = input('What level of output [Summary]: ')
+if out.lower() != 'detailed':
+  dictCommands = dictSummaryCommands
+  outType = 'summary'
+else:
+  dictCommands = dictDetailedCommands
+  outType = 'detailed'
 
 #loop through list of qkviews
 for qkviewNum in qkviewList:
@@ -122,7 +138,71 @@ for qkviewNum in qkviewList:
           version = '## BIG-IP Version: ' + fields[7] + '.' + fields[9] + '\n'
     outputStr += version + '\n'
 
-   # retrieve command output from qkview
+
+# Retrieve CPU and Memory
+  url = "https://ihealth-api.f5.com/qkview-analyzer/api/qkviews/" + str(qkviewNum) + "/commands/27b3a0fad26441d792a9d8b041de2a7e44caccef"
+  response = requests.request("GET", url, cookies=cookies, headers=headers)
+  if response.status_code == 200:
+    dictOut = xmltodict.parse(response.text)
+    encoded = dictOut['commands']['command']['output'] 
+    if len(encoded) % 4 == 3:
+      encoded += '='
+    elif len(encoded) % 4 == 2:
+      encoded += '=='
+    
+    decoded_cmdOut = base64.b64decode(encoded).decode(encoding='UTF-8').split('\n')
+    for line in decoded_cmdOut:
+      if 'Active CPU Count' in line:
+        fields = line.split('Count')
+        activeCpuCount = fields[1].strip()
+      elif 'CPU Count' in line: 
+        fields = line.split('Count')
+        cpuCount = fields[1].strip()
+      elif '  Total ' in line:
+        fields = line.split('Total')
+        totalMemory = fields[1].strip()
+ 
+    cpuMemoryOut = 'CPU Info: \n'
+    cpuMemoryOut += '\tTotal CPUs: ' + str(cpuCount) + '\n'
+    cpuMemoryOut += '\tActive CPUs: ' + str(activeCpuCount) + '\n'
+    cpuMemoryOut += 'Physical Memory: ' + str(totalMemory) + '\n'
+    outputStr += cpuMemoryOut + '\n'
+
+
+# Retrieve bigip.conf to parse for object counts
+  url = "https://ihealth-api.f5.com/qkview-analyzer/api/qkviews/" + str(qkviewNum) + "/files/Y29uZmlnL2JpZ2lwLmNvbmY"
+  response = requests.request("GET", url, cookies=cookies, headers=headers)
+  if response.status_code == 200:
+    responseText = response.text
+    vsCount = responseText.count("ltm virtual ")
+    poolCount = responseText.count("ltm pool ")
+    nodeCount = responseText.count("ltm node ")
+    iRulesCount = responseText.count("ltm rule ")
+    snatCount = responseText.count("ltm snat")
+    monitorCount = responseText.count("ltm monitor ")
+    clientSslProfileCount = responseText.count("ltm profile client-ssl ")
+    serverSslProfileCount = responseText.count("ltm profile server-ssl ")
+    apmAaaCount = responseText.count('apm aaa ')
+    apmAccessPolicyCount = responseText.count('apm policy access-policy ')
+    wafPolicyCount = responseText.count('asm policy ')
+
+    outputStr += '\n\n ### Configuration Totals: \n'
+    outputStr += '| Object          | Totals | \n'
+    outputStr += '| :-------------: | :----: | \n'
+    outputStr += '| Virtual Servers | ' + str(vsCount) + '| \n'
+    outputStr += '| Pools           | ' + str(poolCount) + '| \n'
+    outputStr += '| Nodes           | ' + str(nodeCount) + '| \n'
+    outputStr += '| iRules          | ' + str(iRulesCount) + '| \n'
+    outputStr += '| SNATs           | ' + str(snatCount) + '| \n'
+    outputStr += '| Monitors        | ' + str(monitorCount) + '| \n'
+    outputStr += '| ClientSSL       | ' + str(clientSslProfileCount) + '| \n'
+    outputStr += '| ServerSSL       | ' + str(serverSslProfileCount) + '| \n'
+    outputStr += '| APM AAA Servers | ' + str(apmAaaCount) + '| \n'
+    outputStr += '| Access Policies | ' + str(apmAccessPolicyCount) + '| \n'
+    outputStr += '| WAF Policies    | ' + str(wafPolicyCount) + '| \n' 
+    outputStr += '\n'
+
+  # retrieve command output from qkview
   for key in dictCommands:
     cmdName = key 
     cmdId = dictCommands[key]
@@ -137,10 +217,10 @@ for qkviewNum in qkviewList:
         encoded += '=='
       outputStr += '\n### ' + cmdName + '\n'
       decoded = base64.b64decode(encoded).decode(encoding='UTF-8')
-      outputStr += '```' + decoded + '```\n'
+      outputStr += '```\n' + decoded + '\n```\n'
 
   outputStr += '\n'
-  fileName = path + '/' + hostName + '_' + timestamp + '_output_qkview.md'
+  fileName = path + '/' + hostName + '_' + timestamp + '_' + outType + '_output.md'
   f = open(fileName, 'w')
   f.write(outputStr)
   f.close()
@@ -164,4 +244,3 @@ for qkviewNum in qkviewList:
   f = open(fileName, 'w')
   f.write(outputStr)
   f.close()
-
