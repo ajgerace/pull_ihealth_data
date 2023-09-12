@@ -8,20 +8,22 @@ This script was written for python3 and has been tested with python 3.6.8
 Prerequisites:
 Install the following pip modules:  requests and xmltodicts
 `sudo pip3 install requests xmltodicts`
+create two environment variables IHF5_CLIENT and IHF5_SECRET.  
+
+If you do not already have your oAuth iHealth-API credentials - see my.f5.com KB article [K000130498](https://my.f5.com/manage/s/article/K000130498)
 
 
 To run pull_ihealth_data:
 `python3 pull_ihealth_data.py`
 
-You will be prompted for your iHealth UserID and password, qkview ID  (multiple qkviews ID can be processed at the same time by separating them by a space ) and customer.
+You will be prompted for the iHealth  qkview ID  (multiple qkviews ID can be processed at the same time by separating them by a space ) and customer.
 It will create subfolder for qkview_output and a subfolder for the provided customer name if they do not already exist.
 
 
 Sample run:
 ```
 $ python3 pull_ihealth_data.py
-Enter your iHealth User ID: a.user@example.com
-Enter your iHealth password: 
+
 Enter qkview id: 12345678
 Enter customer name: internal
 
