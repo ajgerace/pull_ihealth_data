@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 # pull_ihealth_data.py       
-# version: 1.4
+# version: 2.1
+# 2.0 - enable summary / detail modes
+# 2.1 - changed authentication to oauth2 using environment variables for ClientID and Secret
 
 from datetime import datetime
 import requests, sys, os, getpass
@@ -9,25 +11,20 @@ import json,xmltodict,base64
 t = datetime.now()
 timestamp = t.strftime('%d-%b-%Y')
 
-url = "https://api.f5.com/auth/pub/sso/login/ihealth-api"
-
 #check for credentials stored on disk
-if os.path.isfile('.credentials'):
-  f = open('.credentials', 'r')
-  creds_encoded = f.readline()
-  f.close()
-  creds_payload = base64.b64decode(creds_encoded).decode(encoding='UTF-8')
-else:
-  uID = input('Enter your iHealth User ID: ')
-  userID = uID.strip()
-  uPass = getpass.getpass('Enter your iHealth password: ')
-  userPass = uPass.strip()
-  payload = { "user_id": userID, "user_secret": userPass } 
-  creds_payload = json.dumps(payload)
 
-headers = {
-  'Content-Type': 'application/json',
+clientId = os.getenv('IHF5_CLIENT')
+secret = os.getenv('IHF5_SECRET')
+cred = bytes(clientId + ':' + secret,'utf-8')
+oauth_creds = base64.b64encode(cred).decode()
+auth_url = "https://identity.account.f5.com/oauth2/ausp95ykc80HOU7SQ357/v1/token"
+auth_headers = {
+  'Content-Type': 'application/x-www-form-urlencoded', 
+  'authorization': 'Basic ' + str(oauth_creds),
+  'cache-control': 'no-cache',
+  'accept': 'application/json'
 }
+
 # dictionary of tmsh commands to retrieve from the qkview
 dictDetailedCommands = {
   'show /sys hardware': "2072d0f40823cb2c812917008231014eb4afd456", 
@@ -64,12 +61,21 @@ dictGraphs = {
 }
 
 # auth request
-response = requests.request("POST", url, headers=headers, data=creds_payload)
+response = requests.request("POST", auth_url, headers=auth_headers, data="grant_type=client_credentials&scope=ihealth")
 cookies = response.cookies
 if response.status_code != 200:
   print('Authentication error - ' + response.text )
   sys.exit()
-  
+else: 
+  res = response.json()
+  authToken = res['access_token']
+  authToken_type = res['token_type']
+
+headers = {
+  'Content-Type': 'application/json',
+  'authorization': authToken_type + ' ' + authToken
+}
+
 # check for list of qkviews to retrieve , else prompt for qkview id
 if os.path.isfile('qkviews.txt'):
   f = open('qkviews.txt', 'r')
@@ -100,7 +106,7 @@ for qkviewNum in qkviewList:
     qkviewNum = qkviewNum.strip()
 
   # retrieve hostname and chassis serial number
-  url = "https://ihealth-api.f5.com/qkview-analyzer/api/qkviews/" + str(qkviewNum)
+  url = "https://ihealth2-api.f5.com/qkview-analyzer/api/qkviews/" + str(qkviewNum)
   response = requests.request("GET", url, cookies=cookies, headers=headers)
   if response.status_code != 200:
     print('Qkview ' + qkviewNum + ' is unavailable, please login to iHealth to verify status of qkview.  Exiting ...' )
@@ -201,6 +207,8 @@ for qkviewNum in qkviewList:
     outputStr += '| Access Policies | ' + str(apmAccessPolicyCount) + '| \n'
     outputStr += '| WAF Policies    | ' + str(wafPolicyCount) + '| \n' 
     outputStr += '\n'
+    outputStr += '\n' + 'BIG-IP Conf file \n'
+    outputStr += responseText + '\n\n'
 
   # retrieve command output from qkview
   for key in dictCommands:
